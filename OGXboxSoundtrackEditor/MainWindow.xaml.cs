@@ -25,6 +25,9 @@ namespace OGXboxSoundtrackEditor
     /// </summary>
     public partial class MainWindow : Window
     {
+        bool canAddSoundtracks = false;
+        bool canAddSongs = false;
+
         // wma stuff
         WindowsMediaPlayer wmp = new WindowsMediaPlayer();
 
@@ -68,6 +71,18 @@ namespace OGXboxSoundtrackEditor
         }
 
         private void mnuOpen_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                OpenDB();
+            }
+            catch
+            {
+                MessageBox.Show("Unknown error.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OpenDB()
         {
             TreeViewItem rootNode = new TreeViewItem();
             rootNode.Header = "Soundtracks";
@@ -337,20 +352,20 @@ namespace OGXboxSoundtrackEditor
 
         private void listSoundtracks_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (listSoundtracks.SelectedItem == null)
+            {
+                listSongs.ItemsSource = null;
+                btnDeleteSoundtrack.IsEnabled = false;
+                btnAddSongs.IsEnabled = false;
+                btnDeleteSongs.IsEnabled = false;
+                return;
+            }
+
             ListBox listBox = (ListBox)sender;
             Soundtrack soundtrack = (Soundtrack)listBox.SelectedItem;
             soundtrack.RefreshAllSongNames();
             listSongs.ItemsSource = soundtrack.allSongs;
-            if (double.IsNaN(col1.Width))
-            {
-                col1.Width = col1.ActualWidth;
-            }
-            col1.Width = double.NaN;
-            if (double.IsNaN(col2.Width))
-            {
-                col2.Width = col2.ActualWidth;
-            }
-            col2.Width = double.NaN;
+            btnDeleteSoundtrack.IsEnabled = true;
         }
 
         private void btnAddSoundtrack_Click(object sender, RoutedEventArgs e)
@@ -377,7 +392,8 @@ namespace OGXboxSoundtrackEditor
             soundtracks.Add(sTrack);
 
             numSoundtracks++;
-            nextSoundtrackId++;
+
+            FindNextSoundtrackId();
 
             listSoundtracks.SelectedItem = listSoundtracks.Items[soundtracks.Count - 1];
             listSoundtracks.Focus();
@@ -421,13 +437,12 @@ namespace OGXboxSoundtrackEditor
                                 soundtracks[b].songGroups[i].songId[a] = nextSongId;
                                 soundtracks[b].songGroups[i].songNames[a] = songTitle;
                                 soundtracks[b].songGroups[i].songTimeMilliseconds[a] = GetSongLengthInMs(path);
-                                nextSongId++;
                                 soundtracks[b].numSongs++;
 
                                 soundtracks[b].allSongs.Add(new Song { Name = new string(songTitle).Trim(), TimeMs = GetSongLengthInMs(path) });
 
                                 soundtracks[b].CalculateTotalTimeMs();
-
+                                FindNextSongId();
                                 return;
                             }
                         }
@@ -443,12 +458,11 @@ namespace OGXboxSoundtrackEditor
                     sGroup.songTimeMilliseconds[0] = GetSongLengthInMs(path);
                     soundtracks[b].songGroups.Add(sGroup);
                     soundtracks[b].numSongs++;
-                    nextSongId++;
 
                     soundtracks[b].CalculateTotalTimeMs();
 
                     soundtracks[b].allSongs.Add(new Song { Name = new string(songTitle).Trim(), TimeMs = GetSongLengthInMs(path) });
-
+                    FindNextSongId();
                     return;
                 }
             }
@@ -506,6 +520,169 @@ namespace OGXboxSoundtrackEditor
         {
             IWMPMedia mediainfo = wmp.newMedia(path);
             return mediainfo.name;
+        }
+
+        private void btnDeleteSoundtrack_Click(object sender, RoutedEventArgs e)
+        {
+            if (listSoundtracks.SelectedItem == null)
+            {
+                MessageBox.Show("No soundtrack selected.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            Soundtrack temp = (Soundtrack)listSoundtracks.SelectedItem;
+
+            if (MessageBox.Show("Are you sure you want to delete soundtrack " + temp.Name + "?", "Question", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                soundtracks.Remove((Soundtrack)listSoundtracks.SelectedItem);
+                FindNextSongId();
+            }
+        }
+
+        private void btnDeleteSongs_Click(object sender, RoutedEventArgs e)
+        {
+            if (listSongs.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("No songs selected.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            Soundtrack tempSoundtrack = (Soundtrack)listSoundtracks.SelectedItem;
+
+            if (MessageBox.Show("Are you sure you want to delete the selected songs from soundtrack " + tempSoundtrack.Name + "?", "Question", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            for (int i = 0; i < listSongs.SelectedItems.Count; i++)
+            {
+                Song tempSong = (Song)listSongs.SelectedItems[i];
+
+                for (int a = tempSoundtrack.songGroups.Count - 1; a >= 0; a--)
+                {
+                    if (tempSoundtrack.songGroups[a].id == tempSong.songGroupId)
+                    {
+                        for (int z = 0; z < 6; z++)
+                        {
+                            if (tempSoundtrack.songGroups[a].songId[z] == tempSong.id)
+                            {
+                                tempSoundtrack.songGroups[a].songId[z] = 0;
+                                tempSoundtrack.songGroups[a].songNames[z] = new char[32];
+                                tempSoundtrack.songGroups[a].songTimeMilliseconds[z] = 0;
+                            }
+                        }
+
+                        // delete song group if now empty
+                        bool deleteIt = true;
+                        for (int z = 0; z < 6; z++)
+                        {
+                            if (tempSoundtrack.songGroups[a].songTimeMilliseconds[z] > 0)
+                            {
+                                deleteIt = false;
+                                break;
+                            }
+                        }
+                        if (deleteIt)
+                        {
+                            tempSoundtrack.songGroups.RemoveAt(a);
+                        }
+                    }
+                }
+            }
+
+            tempSoundtrack.RefreshAllSongNames();
+            FindNextSongId();
+            RemoveEmptySongGroups(tempSoundtrack);
+        }
+
+        private void FindNextSongId()
+        {
+            int curSongId = 0;
+            while (true)
+            {
+                bool foundCurSongId = false;
+                foreach (Soundtrack sTrack in soundtracks)
+                {
+                    foreach (SongGroup sGroup in sTrack.songGroups)
+                    {
+                        for (int i = 0; i < 6; i++)
+                        {
+                            if (sGroup.songTimeMilliseconds[i] > 0)
+                            {
+                                if (sGroup.songId[i] == curSongId)
+                                {
+                                    foundCurSongId = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!foundCurSongId)
+                {
+                    nextSongId = curSongId;
+                    break;
+                }
+                curSongId++;
+            }
+        }
+
+        private void FindNextSoundtrackId()
+        {
+            int curSoundtrackId = 0;
+            while (true)
+            {
+                bool foundCurSoundtrackId = false;
+                foreach (Soundtrack sTrack in soundtracks)
+                {
+                    if (sTrack.id == curSoundtrackId)
+                    {
+                        foundCurSoundtrackId = true;
+                    }
+                }
+
+                if (!foundCurSoundtrackId)
+                {
+                    nextSoundtrackId = curSoundtrackId;
+                    break;
+                }
+                curSoundtrackId++;
+            }
+        }
+
+        private void listSongs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (listSongs.SelectedItem == null)
+            {
+                btnDeleteSongs.IsEnabled = false;
+            }
+            else
+            {
+                btnDeleteSongs.IsEnabled = true;
+            }
+        }
+
+        private void RemoveEmptySongGroups(Soundtrack sTrack)
+        {
+            if (sTrack.songGroups.Count == 0)
+            {
+                return;
+            }
+            for (int i = sTrack.songGroups.Count - 1; i >= 0; i--)
+            {
+                bool isEmpty = false;
+                for (int a = 0; a < 6; a++)
+                {
+                    if (sTrack.songGroups[i].songTimeMilliseconds[a] > 0)
+                    {
+                        isEmpty = true;
+                    }
+                }
+                if (!isEmpty)
+                {
+                    sTrack.songGroups.RemoveAt(i);
+                }
+            }
         }
     }
 }

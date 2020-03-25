@@ -8,6 +8,9 @@ namespace OGXboxSoundtrackEditor
 {
     public class Song
     {
+        public int id;
+        public int songGroupId;
+
         private string name;
         public string Name
         {

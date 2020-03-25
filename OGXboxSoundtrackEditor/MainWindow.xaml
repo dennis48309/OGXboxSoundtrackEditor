@@ -6,13 +6,6 @@
         xmlns:local="clr-namespace:OGXboxSoundtrackEditor"
         mc:Ignorable="d"
         Title="Xbox Soundtrack Editor" Height="450" Width="800">
-    <Window.Resources>
-        <Style TargetType="TextBlock">
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="FontFamily" Value="Comic Sans MS"/>
-            <Setter Property="FontSize" Value="14"/>
-        </Style>
-    </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
@@ -35,8 +28,8 @@
             <MenuItem Header="_Settings" Click="mnuSettings_Click" />
         </Menu>
         <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal">
-            <Button x:Name="btnAddSoundtrack" Padding="5" Margin="10,10,10,0" Click="btnAddSoundtrack_Click">Add Soundtrack</Button>
-            <Button x:Name="btnDeleteSoundtrack" Padding="5" Margin="0,10,10,0">Delete Soundtrack</Button>
+            <Button x:Name="btnAddSoundtrack" Padding="5" Margin="10,10,10,0" Click="btnAddSoundtrack_Click" IsEnabled="False">Add Soundtrack</Button>
+            <Button x:Name="btnDeleteSoundtrack" Padding="5" Margin="0,10,10,0" Click="btnDeleteSoundtrack_Click" IsEnabled="False">Delete Soundtrack</Button>
         </StackPanel>
         <ListBox x:Name="listSoundtracks" Margin="10,10,0,10" Grid.Row="2" Grid.Column="0" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="listSoundtracks_SelectionChanged">
             <ListBox.ItemTemplate>
@@ -54,14 +47,14 @@
             </ListBox.ItemTemplate>
         </ListBox>
         <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
-            <Button x:Name="btnAddSongs" Padding="5" Margin="10,10,10,0" Click="btnAddSongs_Click">Add Song(s)</Button>
-            <Button x:Name="btnDeleteSongs" Padding="5" Margin="0,10,10,0">Delete Song(s)</Button>
+            <Button x:Name="btnAddSongs" Padding="5" Margin="10,10,10,0" Click="btnAddSongs_Click" IsEnabled="False">Add Song(s)</Button>
+            <Button x:Name="btnDeleteSongs" Padding="5" Margin="0,10,10,0" Click="btnDeleteSongs_Click" IsEnabled="False">Delete Song(s)</Button>
         </StackPanel>
-        <ListView x:Name="listSongs" Grid.Row="2" Grid.Column="1" Margin="10">
+        <ListView x:Name="listSongs" Grid.Row="2" Grid.Column="1" Margin="10" SelectionChanged="listSongs_SelectionChanged">
             <ListView.View>
                 <GridView>
-                    <GridViewColumn x:Name="col1" Header="Name" Width="Auto" DisplayMemberBinding="{Binding Name}" />
-                    <GridViewColumn x:Name="col2" Header="Time (ms)" Width="Auto" DisplayMemberBinding="{Binding TimeMs}" />
+                    <GridViewColumn Header="Name" Width="300" DisplayMemberBinding="{Binding Name}" />
+                    <GridViewColumn Header="Time (ms)" Width="60" DisplayMemberBinding="{Binding TimeMs}" />
                 </GridView>
             </ListView.View>
         </ListView>
