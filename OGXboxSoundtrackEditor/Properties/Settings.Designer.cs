@@ -34,5 +34,41 @@ namespace OGXboxSoundtrackEditor.Properties {
                 this["outputFolder"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string ftpIpAddress {
+            get {
+                return ((string)(this["ftpIpAddress"]));
+            }
+            set {
+                this["ftpIpAddress"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string ftpUsername {
+            get {
+                return ((string)(this["ftpUsername"]));
+            }
+            set {
+                this["ftpUsername"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string ftpPassword {
+            get {
+                return ((string)(this["ftpPassword"]));
+            }
+            set {
+                this["ftpPassword"] = value;
+            }
+        }
     }
 }

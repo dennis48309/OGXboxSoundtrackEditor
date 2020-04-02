@@ -18,12 +18,21 @@ namespace OGXboxSoundtrackEditor
     public partial class UserSettings : Window
     {
         public string outputFolder;
+        public string ftpIpAddress;
+        public string ftpUsername;
+        public string ftpPassword;
 
         public UserSettings()
         {
             InitializeComponent();
             outputFolder = Properties.Settings.Default.outputFolder;
+            ftpIpAddress = Properties.Settings.Default.ftpIpAddress;
+            ftpUsername = Properties.Settings.Default.ftpUsername;
+            ftpPassword = Properties.Settings.Default.ftpPassword;
             txtOutputDirectory.Text = outputFolder;
+            txtIpAddress.Text = ftpIpAddress;
+            txtUsername.Text = ftpUsername;
+            txtPassword.Text = ftpPassword;
         }
 
         private void btnCancel_Click(object sender, RoutedEventArgs e)
@@ -33,9 +42,15 @@ namespace OGXboxSoundtrackEditor
 
         private void btnOK_Click(object sender, RoutedEventArgs e)
         {
-            DialogResult = true;
             Properties.Settings.Default.outputFolder = outputFolder;
+            Properties.Settings.Default.ftpIpAddress = txtIpAddress.Text.Trim();
+            Properties.Settings.Default.ftpUsername = txtUsername.Text.Trim();
+            Properties.Settings.Default.ftpPassword = txtPassword.Text.Trim();
+            ftpIpAddress = txtIpAddress.Text.Trim();
+            ftpUsername = txtUsername.Text.Trim();
+            ftpPassword = txtPassword.Text.Trim();
             Properties.Settings.Default.Save();
+            DialogResult = true;
         }
 
         private void btnBrowse_Click(object sender, RoutedEventArgs e)

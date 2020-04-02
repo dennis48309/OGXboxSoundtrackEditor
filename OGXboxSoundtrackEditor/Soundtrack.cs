@@ -57,7 +57,7 @@ namespace OGXboxSoundtrackEditor
                     if (sGroup.songTimeMilliseconds[i] > 0)
                     {
                         string songName = new string(sGroup.songNames[i]).Trim();
-                        allSongs.Add(new Song { Name = songName, TimeMs = sGroup.songTimeMilliseconds[i], id = sGroup.songId[i], songGroupId = sGroup.id } );
+                        allSongs.Add(new Song { Name = songName, TimeMs = sGroup.songTimeMilliseconds[i], id = sGroup.songId[i], songGroupId = sGroup.id, soundtrackId = id } );
                     }
                 }
             }
