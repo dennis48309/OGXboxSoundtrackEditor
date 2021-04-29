@@ -14,5 +14,11 @@
     <Setting Name="ftpPassword" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
+    <Setting Name="logStrings" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="bitrate" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">192000</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

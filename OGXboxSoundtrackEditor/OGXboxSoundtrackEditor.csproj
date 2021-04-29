@@ -38,15 +38,17 @@
     <ApplicationIcon>iconfinder_gamer_Black_1536929.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="EnkiFtpClient">
-      <HintPath>..\..\EnkiFtpClient\EnkiFtpClient\bin\Debug\netstandard2.0\EnkiFtpClient.dll</HintPath>
-    </Reference>
     <Reference Include="ExpressionEvaluator, Version=2.0.4.0, Culture=neutral, PublicKeyToken=90d9f15d622e2348, processorArchitecture=MSIL">
       <HintPath>..\packages\ExpressionEvaluator.2.0.4.0\lib\net40\ExpressionEvaluator.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="NAudio, Version=1.10.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\NAudio.1.10.0\lib\net35\NAudio.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Web" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
@@ -67,12 +69,23 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="FtpClient.cs" />
+    <Compile Include="FtpDirectory.cs" />
+    <Compile Include="FtpFile.cs" />
+    <Compile Include="FtpLog.xaml.cs">
+      <DependentUpon>FtpLog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="FtpLogEntry.cs" />
     <Compile Include="Song.cs" />
     <Compile Include="SongGroup.cs" />
     <Compile Include="Soundtrack.cs" />
     <Compile Include="UserSettings.xaml.cs">
       <DependentUpon>UserSettings.xaml</DependentUpon>
     </Compile>
+    <Page Include="FtpLog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -133,6 +146,9 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="green.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="NewFolder1\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

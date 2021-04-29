@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -21,6 +22,7 @@ namespace OGXboxSoundtrackEditor
         public string ftpIpAddress;
         public string ftpUsername;
         public string ftpPassword;
+        public int bitrate;
 
         public UserSettings()
         {
@@ -29,10 +31,32 @@ namespace OGXboxSoundtrackEditor
             ftpIpAddress = Properties.Settings.Default.ftpIpAddress;
             ftpUsername = Properties.Settings.Default.ftpUsername;
             ftpPassword = Properties.Settings.Default.ftpPassword;
+            bitrate = Properties.Settings.Default.bitrate;
             txtOutputDirectory.Text = outputFolder;
             txtIpAddress.Text = ftpIpAddress;
             txtUsername.Text = ftpUsername;
             txtPassword.Text = ftpPassword;
+
+            if (bitrate == 96000)
+            {
+                cboBitrate.SelectedIndex = 0;
+            }
+            else if (bitrate == 128000)
+            {
+                cboBitrate.SelectedIndex = 1;
+            }
+            else if (bitrate == 192000)
+            {
+                cboBitrate.SelectedIndex = 2;
+            }
+            else if (bitrate == 256000)
+            {
+                cboBitrate.SelectedIndex = 3;
+            }
+            else if (bitrate == 320000)
+            {
+                cboBitrate.SelectedIndex = 4;
+            }
         }
 
         private void btnCancel_Click(object sender, RoutedEventArgs e)
@@ -46,6 +70,28 @@ namespace OGXboxSoundtrackEditor
             Properties.Settings.Default.ftpIpAddress = txtIpAddress.Text.Trim();
             Properties.Settings.Default.ftpUsername = txtUsername.Text.Trim();
             Properties.Settings.Default.ftpPassword = txtPassword.Text.Trim();
+
+            if (cboBitrate.SelectedIndex == 0)
+            {
+                Properties.Settings.Default.bitrate = 96000;
+            }
+            if (cboBitrate.SelectedIndex == 1)
+            {
+                Properties.Settings.Default.bitrate = 128000;
+            }
+            if (cboBitrate.SelectedIndex == 2)
+            {
+                Properties.Settings.Default.bitrate = 192000;
+            }
+            if (cboBitrate.SelectedIndex == 3)
+            {
+                Properties.Settings.Default.bitrate = 256000;
+            }
+            if (cboBitrate.SelectedIndex == 4)
+            {
+                Properties.Settings.Default.bitrate = 320000;
+            }
+
             ftpIpAddress = txtIpAddress.Text.Trim();
             ftpUsername = txtUsername.Text.Trim();
             ftpPassword = txtPassword.Text.Trim();

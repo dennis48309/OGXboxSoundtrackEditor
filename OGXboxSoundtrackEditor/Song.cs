@@ -12,6 +12,8 @@ namespace OGXboxSoundtrackEditor
         public int songGroupId;
         public int soundtrackId;
 
+        public bool isRemote;
+
         private string name;
         public string Name
         {

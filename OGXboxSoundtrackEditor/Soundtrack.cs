@@ -29,15 +29,9 @@ namespace OGXboxSoundtrackEditor
         public void CalculateTotalTimeMs()
         {
             int time = 0;
-            foreach (SongGroup sGroup in songGroups)
+            foreach (Song song in allSongs)
             {
-                for (int i = 0; i < 6; i++)
-                {
-                    if (sGroup.songTimeMilliseconds[i] > 0)
-                    {
-                        time += sGroup.songTimeMilliseconds[i];
-                    }
-                }
+                time += song.TimeMs;
             }
             totalTimeMilliseconds = time;
         }

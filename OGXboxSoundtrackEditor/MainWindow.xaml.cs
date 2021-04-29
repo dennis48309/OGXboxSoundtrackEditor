@@ -1,11 +1,12 @@
-﻿using EnkiFtpClient;
-using Microsoft.VisualBasic;
+﻿using Microsoft.VisualBasic;
 using Microsoft.Win32;
+using NAudio.Wave;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
-using System.Linq;
+using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -29,6 +30,8 @@ namespace OGXboxSoundtrackEditor
     /// </summary>
     public partial class MainWindow : Window
     {
+        List<FtpLogEntry> logLines = new List<FtpLogEntry>();
+
         Thread thrFtpControl;
 
         FtpClient ftpClient;
@@ -41,6 +44,7 @@ namespace OGXboxSoundtrackEditor
         string ftpIpAddress;
         string ftpUsername;
         string ftpPassword;
+        int bitrate;
 
         List<string> ftpLocalPaths = new List<string>();
         List<string> ftpDestPaths = new List<string>();
@@ -66,14 +70,41 @@ namespace OGXboxSoundtrackEditor
         {
             InitializeComponent();
 
+            LoadSettings();
+        }
+
+        private void LoadSettings()
+        {
             outputFolder = Properties.Settings.Default.outputFolder;
             ftpIpAddress = Properties.Settings.Default.ftpIpAddress;
             ftpUsername = Properties.Settings.Default.ftpUsername;
             ftpPassword = Properties.Settings.Default.ftpPassword;
+            bitrate = Properties.Settings.Default.bitrate;
+        }
+
+        private void UpdateStatus(string s)
+        {
+            Dispatcher.Invoke(new Action(() => {
+                txtStatus.Text = s;
+            }));
+        }
+
+        private void AddEntriesToLog()
+        {
+            foreach (FtpLogEntry entry in ftpClient.ftpLogEntries)
+            {
+                Properties.Settings.Default.logStrings += entry.EntryData + Environment.NewLine;
+            }
         }
 
         private void mnuNew_Click(object sender, RoutedEventArgs e)
         {
+            MessageBoxResult result = MessageBox.Show("This will delete your entire soundtrack database from the Xbox.  Are you sure?", "Delete Soundtrack Database", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
             // create header
             magic = 0x00000001;
             numSoundtracks = 0;
@@ -89,158 +120,172 @@ namespace OGXboxSoundtrackEditor
             listSoundtracks.ItemsSource = soundtracks;
             btnAddSoundtrack.IsEnabled = true;
 
-            if (DeleteAllFromFtp())
-            {
-                txtStatus.Text = "Deleted All From FTP";
-            }
-            else
-            {
-
-            }
-        }
-
-        private void OpenDB()
-        {
-            OpenFileDialog ofd = new OpenFileDialog();
-            ofd.Filter = "Xbox Soundtrack|*.DB";
-            Nullable<bool> dResult = ofd.ShowDialog();
+            gridMain.IsEnabled = false;
+            txtStatus.Text = "Deleting DB From FTP";
+            thrFtpControl = new Thread(new ThreadStart(DeleteAllFromFtp));
+            thrFtpControl.Start();
         }
 
         private void OpenDbFromStream()
         {
-            ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
-            if (!ftpClient.Login())
+            try
             {
-                return;
-            }
-            if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
-            {
-                return;
-            }
-            if (!ftpClient.Size(@"ST.DB"))
-            {
-                return;
-            }
-            if (!ftpClient.Retrieve(outputFolder + @"\ST.DB", @"ST.DB"))
-            {
-                return;
-            }
-            ftpClient.Disconnect();
-
-            BinaryReader bReader = new BinaryReader(new MemoryStream(ftpClient.downloadedBytes), Encoding.Unicode);
-            magic = bReader.ReadInt32();
-            numSoundtracks = bReader.ReadInt32();
-            nextSoundtrackId = bReader.ReadInt32();
-            for (int i = 0; i < 100; i++)
-            {
-                soundtrackIds[i] = bReader.ReadInt32();
-            }
-            nextSongId = bReader.ReadInt32();
-            for (int i = 0; i < 96; i++)
-            {
-                padding[i] = bReader.ReadByte();
-            }
-
-            for (int i = 0; i < numSoundtracks; i++)
-            {
-                Soundtrack s = new Soundtrack();
-                s.magic = bReader.ReadInt32();
-                s.id = bReader.ReadInt32();
-                s.numSongs = bReader.ReadUInt32();
-                for (int a = 0; a < 84; a++)
+                ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
+                if (!ftpClient.Connect())
                 {
-                    s.songGroupIds[a] = bReader.ReadInt32();
+                    txtStatus.Text = "Failed to connect to FTP server.";
+                    return;
                 }
-                songGroupCount++;
-                for (int a = 1; a < 84; a++)
+                if (!ftpClient.Login())
                 {
-                    if (s.songGroupIds[a] != 0)
+                    txtStatus.Text = "Failed to login to FTP server.";
+                    return;
+                }
+                if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
+                {
+                    if (!ftpClient.MakeDirectory(@"/E/TDATA/fffe0000/music"))
                     {
-                        songGroupCount++;
+                        txtStatus.Text = "Failed to create directory on FTP server.";
+                        ftpClient.Disconnect();
+                        return;
                     }
                 }
+                if (!ftpClient.Retrieve(@"ST.DB"))
+                {
+                    txtStatus.Text = "Failed to open ST.DB from FTP server.";
+                    ftpClient.Disconnect();
+                    return;
+                }
+                ftpClient.Disconnect();
 
-                s.totalTimeMilliseconds = bReader.ReadInt32();
-                for (int a = 0; a < 64; a++)
+                BinaryReader bReader = new BinaryReader(new MemoryStream(ftpClient.downloadedBytes), Encoding.Unicode);
+                magic = bReader.ReadInt32();
+                numSoundtracks = bReader.ReadInt32();
+                nextSoundtrackId = bReader.ReadInt32();
+                for (int i = 0; i < 100; i++)
                 {
-                    s.name[a] = bReader.ReadChar();
+                    soundtrackIds[i] = bReader.ReadInt32();
                 }
-                bReader.ReadBytes(32);
+                nextSongId = bReader.ReadInt32();
+                for (int i = 0; i < 96; i++)
+                {
+                    padding[i] = bReader.ReadByte();
+                }
 
-                soundtracks.Add(s);
-            }
-
-            byte h;
-            do
-            {
-                h = bReader.ReadByte();
-                if (h != 0x73)
+                for (int i = 0; i < numSoundtracks; i++)
                 {
-                    paddingBetween++;
-                }
-            } while (h != 0x73);
-            bReader.ReadBytes(3);
-
-            for (int i = 0; i < songGroupCount; i++)
-            {
-                SongGroup sGroup = new SongGroup();
-                if (i == 0)
-                {
-                    sGroup.magic = 0x00031073;
-                }
-                else
-                {
-                    sGroup.magic = bReader.ReadInt32();
-                }
-                sGroup.soundtrackId = bReader.ReadInt32();
-                sGroup.id = bReader.ReadInt32();
-                sGroup.padding = bReader.ReadInt32();
-                for (int a = 0; a < 6; a++)
-                {
-                    sGroup.songId[a] = bReader.ReadInt16();
-                    bReader.ReadInt16();
-                }
-                for (int a = 0; a < 6; a++)
-                {
-                    sGroup.songTimeMilliseconds[a] = bReader.ReadInt32();
-                }
-                for (int a = 0; a < 6; a++)
-                {
-                    char[] newArray = new char[32];
-                    for (int b = 0; b < 32; b++)
+                    Soundtrack s = new Soundtrack();
+                    s.magic = bReader.ReadInt32();
+                    s.id = bReader.ReadInt32();
+                    s.numSongs = bReader.ReadUInt32();
+                    // 12 bytes read
+                    for (int a = 0; a < 84; a++)
                     {
-                        newArray[b] = bReader.ReadChar();
+                        s.songGroupIds[a] = bReader.ReadInt32();
                     }
-                    sGroup.songNames[a] = newArray;
-                }
-                for (int a = 0; a < 64; a++)
-                {
-                    sGroup.paddingChar[a] = bReader.ReadByte();
-                }
-                for (int p = 0; p < soundtracks.Count; p++)
-                {
-                    if (soundtracks[p].id == sGroup.soundtrackId)
+                    // 336 bytes read
+                    songGroupCount++;
+                    for (int a = 1; a < 84; a++)
                     {
-                        soundtracks[p].songGroups.Add(sGroup);
+                        if (s.songGroupIds[a] != 0)
+                        {
+                            songGroupCount++;
+                        }
+                    }
+
+                    s.totalTimeMilliseconds = bReader.ReadInt32();
+                    // 4 bytes read
+                    for (int a = 0; a < 64; a++)
+                    {
+                        s.name[a] = bReader.ReadChar();
+                    }
+                    bReader.ReadBytes(32);
+                    // 128 bytes read
+
+                    soundtracks.Add(s);
+                }
+
+                byte h;
+                do
+                {
+                    h = bReader.ReadByte();
+                    if (h != 0x73)
+                    {
+                        paddingBetween++;
+                    }
+                } while (h != 0x73);
+                bReader.ReadBytes(3);
+
+                for (int i = 0; i < songGroupCount; i++)
+                {
+                    SongGroup sGroup = new SongGroup();
+                    if (i == 0)
+                    {
+                        sGroup.magic = 0x00031073;
+                    }
+                    else
+                    {
+                        sGroup.magic = bReader.ReadInt32();
+                    }
+                    sGroup.soundtrackId = bReader.ReadInt32();
+                    sGroup.id = bReader.ReadInt32();
+                    sGroup.padding = bReader.ReadInt32();
+                    for (int a = 0; a < 6; a++)
+                    {
+                        sGroup.songId[a] = bReader.ReadInt16();
+                        bReader.ReadInt16();
+                    }
+                    for (int a = 0; a < 6; a++)
+                    {
+                        sGroup.songTimeMilliseconds[a] = bReader.ReadInt32();
+                    }
+                    for (int a = 0; a < 6; a++)
+                    {
+                        char[] newArray = new char[32];
+                        for (int b = 0; b < 32; b++)
+                        {
+                            newArray[b] = bReader.ReadChar();
+                        }
+                        sGroup.songNames[a] = newArray;
+                    }
+                    for (int a = 0; a < 64; a++)
+                    {
+                        sGroup.paddingChar[a] = bReader.ReadByte();
+                    }
+                    for (int p = 0; p < soundtracks.Count; p++)
+                    {
+                        if (soundtracks[p].id == sGroup.soundtrackId)
+                        {
+                            soundtracks[p].songGroups.Add(sGroup);
+                        }
                     }
                 }
-            }
-            bReader.Close();
+                bReader.Close();
 
-            Dispatcher.Invoke(new Action(() => {
-                listSoundtracks.ItemsSource = soundtracks;
-                txtStatus.Text = "DB Loaded Successfully";
-            }));
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    btnAddSoundtrack.IsEnabled = true;
+                    listSoundtracks.ItemsSource = soundtracks;
+                    txtStatus.Text = "DB Loaded Successfully 123";
+                    gridMain.IsEnabled = true;
+                }));
+            }
+            catch
+            {
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Unknown Error.  Check the log for details.";
+                }));
+            }
         }
 
         private void mnuSettings_Click(object sender, RoutedEventArgs e)
         {
             UserSettings wndSettings = new UserSettings();
+            wndSettings.Top = this.Top + 100;
+            wndSettings.Left = this.Left + 100;
             wndSettings.ShowDialog();
-            outputFolder = wndSettings.outputFolder;
-            ftpIpAddress = wndSettings.ftpIpAddress;
-            ftpUsername = wndSettings.ftpUsername;
-            ftpPassword = wndSettings.ftpPassword;
+            LoadSettings();
         }
 
         private void CalculateSongGroupIndexes()
@@ -269,10 +314,6 @@ namespace OGXboxSoundtrackEditor
                 dbSize = dbSize + (sTrack.songGroups.Count * 512);
             }
             return dbSize;
-        }
-
-        private void mnuSave_Click(object sender, RoutedEventArgs e)
-        {
         }
 
         private byte[] GetDbBytes()
@@ -385,13 +426,16 @@ namespace OGXboxSoundtrackEditor
             {
                 listSongs.ItemsSource = null;
                 btnDeleteSoundtrack.IsEnabled = false;
-                btnAddSongs.IsEnabled = false;
-                btnDeleteSongs.IsEnabled = false;
+                btnAddMp3.IsEnabled = false;
+                btnAddWma.IsEnabled = false;
+                btnRenameSoundtrack.IsEnabled = false;
                 return;
             }
             else
             {
-                btnAddSongs.IsEnabled = true;
+                btnAddMp3.IsEnabled = true;
+                btnAddWma.IsEnabled = true;
+                btnRenameSoundtrack.IsEnabled = true;
             }
 
             ListBox listBox = (ListBox)sender;
@@ -404,6 +448,7 @@ namespace OGXboxSoundtrackEditor
         private void btnAddSoundtrack_Click(object sender, RoutedEventArgs e)
         {
             string title = Interaction.InputBox("Enter a new soundtrack title", "Soundtrack Title", "", -1, -1).Trim();
+            title = title.Trim();
             if (title == "")
             {
                 MessageBox.Show("Title cannot be empty.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -430,26 +475,68 @@ namespace OGXboxSoundtrackEditor
 
             listSoundtracks.SelectedItem = listSoundtracks.Items[soundtracks.Count - 1];
             listSoundtracks.Focus();
+
+            txtStatus.Text = "Added soundtrack " + title;
         }
 
-        private void btnAddSongs_Click(object sender, RoutedEventArgs e)
+        private void btnAddWma_Click(object sender, RoutedEventArgs e)
         {
-            Soundtrack sTrack = (Soundtrack)listSoundtracks.SelectedItem;
-            int soundtrackId = sTrack.id;
-
             OpenFileDialog oDialog = new OpenFileDialog();
             oDialog.Filter = "Windows Media Audio files (*.wma)|*.wma";
             oDialog.Multiselect = true;
 
-            oDialog.ShowDialog();
-
-            foreach (string path in oDialog.FileNames)
+            if (oDialog.ShowDialog() != true)
             {
-                ftpLocalPaths.Add(path);
-                AddSongLoop(soundtrackId, path);
+                return;
             }
 
-            btnFTPChanges.IsEnabled = true;
+            gridMain.IsEnabled = false;
+            Thread addWmaFiles = new Thread(new ParameterizedThreadStart(AddWmaFiles));
+            addWmaFiles.Start(oDialog.FileNames);
+        }
+
+        private void AddWmaFiles(object paths)
+        {
+            try
+            {
+                Soundtrack sTrack = null;
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    sTrack = (Soundtrack)listSoundtracks.SelectedItem;
+                }));
+
+                int soundtrackId = sTrack.id;
+
+                string[] realPaths = (string[])paths;
+
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Adding Wma Files";
+                    progFtpTransfer.Maximum = realPaths.Length;
+                }));
+
+                foreach (string path in realPaths)
+                {
+                    ftpLocalPaths.Add(path);
+                    AddSongLoop(soundtrackId, path);
+                }
+
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Wma Files Added Successfully";
+                    gridMain.IsEnabled = true;
+                    btnFTPChanges.IsEnabled = true;
+                }));
+            }
+            catch
+            {
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Unknown Error.  Check the log for details";
+                    gridMain.IsEnabled = true;
+                    btnFTPChanges.IsEnabled = true;
+                }));
+            }
         }
 
         private void AddSongLoop(int soundtrackId, string path)
@@ -469,7 +556,11 @@ namespace OGXboxSoundtrackEditor
                                 soundtracks[b].songGroups[i].songNames[a] = songTitle;
                                 soundtracks[b].songGroups[i].songTimeMilliseconds[a] = GetSongLengthInMs(path);
                                 soundtracks[b].numSongs++;
-                                soundtracks[b].allSongs.Add(new Song { Name = new string(songTitle).Trim(), TimeMs = GetSongLengthInMs(path), songGroupId = soundtracks[b].songGroups[i].id, soundtrackId = soundtracks[b].id, id = nextSongId });
+                                Dispatcher.Invoke(new Action(() =>
+                                {
+                                    soundtracks[b].allSongs.Add(new Song { isRemote = false, Name = new string(songTitle).Trim(), TimeMs = GetSongLengthInMs(path), songGroupId = soundtracks[b].songGroups[i].id, soundtrackId = soundtracks[b].id, id = nextSongId });
+                                }));
+                                
                                 soundtracks[b].CalculateTotalTimeMs();
 
                                 ftpSoundtrackIds.Add(soundtrackId.ToString("X4"));
@@ -491,8 +582,11 @@ namespace OGXboxSoundtrackEditor
                     sGroup.songTimeMilliseconds[0] = GetSongLengthInMs(path);
                     soundtracks[b].songGroups.Add(sGroup);
                     soundtracks[b].numSongs++;
+                    Dispatcher.Invoke(new Action(() =>
+                    {
+                        soundtracks[b].allSongs.Add(new Song { isRemote = false, Name = new string(songTitle).Trim(), TimeMs = GetSongLengthInMs(path), songGroupId = sGroup.id, soundtrackId = soundtracks[b].id, id = nextSongId });
+                    }));
                     soundtracks[b].CalculateTotalTimeMs();
-                    soundtracks[b].allSongs.Add(new Song { Name = new string(songTitle).Trim(), TimeMs = GetSongLengthInMs(path), songGroupId = sGroup.id, soundtrackId = soundtracks[b].id, id = nextSongId });
 
                     ftpSoundtrackIds.Add(soundtrackId.ToString("X4"));
                     ftpDestPaths.Add(soundtrackId.ToString("X4") + nextSongId.ToString("X4") + @".wma");
@@ -523,7 +617,7 @@ namespace OGXboxSoundtrackEditor
         {
             char[] titleChars = new char[32];
             IWMPMedia mediainfo = wmp.newMedia(path);
-            string title = mediainfo.name;
+            string title = mediainfo.name.Trim();
             if (title.Length > 32)
             {
                 bool validTitle = false;
@@ -534,7 +628,7 @@ namespace OGXboxSoundtrackEditor
                     {
                         MessageBox.Show("Title cannot be longer than 32 characters.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
-                    else if (title.Trim() == "")
+                    else if (title == "")
                     {
                         MessageBox.Show("Title cannot be blank.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
@@ -591,32 +685,53 @@ namespace OGXboxSoundtrackEditor
             {
                 Song tempSong = (Song)listSongs.SelectedItems[i];
 
-                for (int a = tempSoundtrack.songGroups.Count - 1; a >= 0; a--)
+                bool foundInArray = false;
+                for (int z = ftpDestPaths.Count - 1; z >= 0; z--)
                 {
-                    if (tempSoundtrack.songGroups[a].id == tempSong.songGroupId)
+                    if (ftpDestPaths[z] == tempSong.soundtrackId.ToString("X4") + tempSong.id.ToString("X4") + @".wma")
                     {
-                        for (int z = 0; z < 6; z++)
+                        foundInArray = true;
+                        ftpDestPaths.RemoveAt(z);
+                        ftpLocalPaths.RemoveAt(z);
+                        ftpSoundtrackIds.RemoveAt(z);
+                    }
+                }
+
+                foreach (SongGroup sGroup in tempSoundtrack.songGroups)
+                {
+                    for (int p = 0; p < 6; p++)
+                    {
+                        if (sGroup.songId[p] == tempSong.id)
                         {
-                            if (tempSoundtrack.songGroups[a].songId[z] == tempSong.id)
-                            {
-                                tempSoundtrack.songGroups[a].songId[z] = 0;
-                                tempSoundtrack.songGroups[a].songNames[z] = new char[32];
-                                tempSoundtrack.songGroups[a].songTimeMilliseconds[z] = 0;
-                            }
+                            sGroup.songId[p] = 0;
+                            sGroup.songNames[p] = new char[32];
+                            sGroup.songTimeMilliseconds[p] = 0;
                         }
                     }
                 }
 
-                ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
-                if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music/" + tempSong.soundtrackId.ToString("X4")))
+                if (!foundInArray)
                 {
-                    return;
+
+                    ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
+                    if (!ftpClient.Connect())
+                    {
+                        return;
+                    }
+                    if (!ftpClient.Login())
+                    {
+                        return;
+                    }
+                    if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music/" + tempSong.soundtrackId.ToString("X4")))
+                    {
+                        return;
+                    }
+                    if (!ftpClient.DeleteFile(tempSong.soundtrackId.ToString("X4") + tempSong.id.ToString("X4") + @".wma"))
+                    {
+                        return;
+                    }
+                    ftpClient.Disconnect();
                 }
-                if (!ftpClient.DeleteFile(tempSong.soundtrackId.ToString("X4") + tempSong.id.ToString("X4") + @".wma"))
-                {
-                    return;
-                }
-                ftpClient.Disconnect();
 
                 tempSoundtrack.numSongs--;
             }
@@ -624,6 +739,7 @@ namespace OGXboxSoundtrackEditor
             txtStatus.Text = "Songs Deleted Successfully";
 
             tempSoundtrack.RefreshAllSongNames();
+            listSongs.ItemsSource = tempSoundtrack.allSongs;
             ReorderSongsInGroups(tempSoundtrack);
             FindNextSongId();
         }
@@ -742,9 +858,16 @@ namespace OGXboxSoundtrackEditor
             if (listSongs.SelectedItem == null)
             {
                 btnDeleteSongs.IsEnabled = false;
+                btnRenameSong.IsEnabled = false;
+            }
+            else if (listSongs.SelectedItems.Count > 1)
+            {
+                btnRenameSong.IsEnabled = false;
+                btnDeleteSongs.IsEnabled = true;
             }
             else
             {
+                btnRenameSong.IsEnabled = true;
                 btnDeleteSongs.IsEnabled = true;
             }
         }
@@ -785,20 +908,28 @@ namespace OGXboxSoundtrackEditor
             try
             {
                 ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
-                if (!ftpClient.Login())
+                if (!ftpClient.Connect())
                 {
+                    SetStatus("Error: Failed To Connnect To Xbox");
                     return;
                 }
-                if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
+                if (!ftpClient.Login())
                 {
+                    SetStatus("Error: Wrong Username Or Password");
+                    return;
+                }
+                if (!ChangeToMusicDirectory())
+                {
+                    SetStatus("Error: Unable To Create Music Folder");
                     return;
                 }
 
                 ftpClient.DeleteFile("ST.DB");
-
+                ftpClient.TransferBinaryMode();
                 ftpClient.toUploadBytes = GetDbBytes();
                 if (!ftpClient.Store("ST.DB"))
                 {
+                    Debug.WriteLine("ERROR: STOR ST.DB failed");
                     return;
                 }
 
@@ -819,6 +950,7 @@ namespace OGXboxSoundtrackEditor
 
                     if (!ftpClient.Store(ftpLocalPaths[i], ftpDestPaths[i]))
                     {
+                        Debug.WriteLine("ERROR: STOR " + ftpDestPaths[i] + " failed");
                         return;
                     }
 
@@ -841,13 +973,22 @@ namespace OGXboxSoundtrackEditor
                     gridMain.IsEnabled = true;
                 }));
             }
-            catch
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Failed To Upload Changes";
+                    gridMain.IsEnabled = true;
+                }));
+            }
+            finally
             {
                 Dispatcher.Invoke(new Action(() =>
                 {
-                    txtStatus.Text = "Failure";
-                    gridMain.IsEnabled = true;
+                    progFtpTransfer.Value = 0;
                 }));
+                logLines = ftpClient.ftpLogEntries;
             }
             ftpDestPaths.Clear();
             ftpLocalPaths.Clear();
@@ -855,18 +996,26 @@ namespace OGXboxSoundtrackEditor
             return;
         }
 
-        private bool DeleteAllFromFtp()
+        private void DeleteAllFromFtp()
         {
+            ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
             try
             {
-                FtpClient ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
+                if (!ftpClient.Connect())
+                {
+                    SetStatus("Error: Failed To Connnect To Xbox");
+                    return;
+                }
                 if (!ftpClient.Login())
                 {
-                    return false;
+                    SetStatus("Error: Wrong Username Or Password");
+                    return;
                 }
                 if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
                 {
-                    return false;
+                    SetStatus("Error: No Music To Delete");
+                    ftpClient.Disconnect();
+                    return;
                 }
 
                 ftpClient.List();
@@ -875,9 +1024,15 @@ namespace OGXboxSoundtrackEditor
 
                 foreach (FtpDirectory tempDir in soundtrackFolders)
                 {
-                    if (!ftpClient.ChangeWorkingDirectory(tempDir.name))
+                    if (tempDir.Name == "..")
                     {
-                        return false;
+                        continue;
+                    }
+
+                    if (!ftpClient.ChangeWorkingDirectory(tempDir.Name))
+                    {
+                        ftpClient.Disconnect();
+                        return;
                     }
 
                     ftpClient.List();
@@ -887,16 +1042,19 @@ namespace OGXboxSoundtrackEditor
                     {
                         if (!ftpClient.DeleteFile(tempFile.name))
                         {
-                            return false;
+                            ftpClient.Disconnect();
+                            return;
                         }
                     }
                     if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
                     {
-                        return false;
+                        ftpClient.Disconnect();
+                        return;
                     }
-                    if (!ftpClient.DeleteFolder(tempDir.name))
+                    if (!ftpClient.DeleteFolder(tempDir.Name))
                     {
-                        return false;
+                        ftpClient.Disconnect();
+                        return;
                     }
                 }
 
@@ -904,30 +1062,474 @@ namespace OGXboxSoundtrackEditor
                 {
                     if (!ftpClient.DeleteFile(tempFile.name))
                     {
-                        return false;
+                        ftpClient.Disconnect();
+                        return;
                     }
                 }
 
                 ftpClient.Disconnect();
+                Dispatcher.Invoke(new Action(() => {
+                    txtStatus.Text = "DB Deleted From FTP";
+                }));
             }
-            catch
+            catch (Exception ex)
             {
-                return false;
+                Dispatcher.Invoke(new Action(() => {
+                    txtStatus.Text = "Critical Error";
+                }));
             }
-
-            return true;
+            finally
+            {
+                Dispatcher.Invoke(new Action(() => {
+                    gridMain.IsEnabled = true;
+                }));
+                logLines = ftpClient.ftpLogEntries;
+            }
         }
 
         private void mnuOpenFromFtp_Click(object sender, RoutedEventArgs e)
         {
+            gridMain.IsEnabled = false;
+            OpenDbFromStream();
+        }
+
+        private void btnRenameSoundtrack_Click(object sender, RoutedEventArgs e)
+        {
+            Soundtrack sTrack = (Soundtrack)listSoundtracks.SelectedItem;
+            string title = Interaction.InputBox("Enter a new soundtrack title", "Soundtrack Title", new string(sTrack.name), -1, -1).Trim();
+            title = title.Trim();
+            if (title == "")
+            {
+                MessageBox.Show("Title cannot be empty.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            else if (title.Length > 64)
+            {
+                MessageBox.Show("Title cannot be longer than 64 characters.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            sTrack.name = new char[64];
+            title.CopyTo(0, sTrack.name, 0, title.Length);
+        }
+
+        private bool ContainsSoundtracks()
+        {
+            if (soundtracks.Count > 0)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private void btnRenameSong_Click(object sender, RoutedEventArgs e)
+        {
+            Song song = (Song)listSongs.SelectedItem;
+            string title = Interaction.InputBox("Enter a new song title", "Soundtrack Title", song.Name, -1, -1).Trim();
+            title = title.Trim();
+            if (title == "")
+            {
+                MessageBox.Show("Title cannot be empty.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            else if (title.Length > 32)
+            {
+                MessageBox.Show("Title cannot be longer than 32 characters.  Please try again.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            foreach (Soundtrack sTrack in soundtracks)
+            {
+                if (sTrack.id == song.soundtrackId)
+                {
+                    foreach (SongGroup sGroup in sTrack.songGroups)
+                    {
+                        for (int i = 0; i < 6; i++)
+                        {
+                            if (song.id == sGroup.songId[i] && sGroup.songTimeMilliseconds[i] > 0)
+                            {
+                                sGroup.songNames[i] = new char[32];
+                                title.CopyTo(0, sGroup.songNames[i], 0, title.Length);
+                                sTrack.RefreshAllSongNames();
+                                listSongs.Items.Refresh();
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void mnuBackupFromFtp_Click(object sender, RoutedEventArgs e)
+        {
+            SaveFileDialog sDialog = new SaveFileDialog();
+            sDialog.Filter = "Zip files (*.zip)|*.zip";
+            sDialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            if (sDialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            gridMain.IsEnabled = false;
+            txtStatus.Text = "Backing Up From FTP";
+            thrFtpControl = new Thread(new ParameterizedThreadStart(BackupFromFtp));
+            thrFtpControl.Start(sDialog.FileName);
+        }
+
+        private void BackupFromFtp(object zipPath)
+        {
             try
             {
-                OpenDbFromStream();
-                txtStatus.Text = "ST.DB Opened From FTP";
+                using (FileStream fStream = new FileStream((string)zipPath, FileMode.Create))
+                {
+                    using (ZipArchive zip = new ZipArchive(fStream, ZipArchiveMode.Create, true))
+                    {
+                        ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
+
+                        if (!ftpClient.Connect())
+                        {
+                            SetStatus("Error: Failed To Connnect To Xbox");
+                            return;
+                        }
+                        if (!ftpClient.Login())
+                        {
+                            SetStatus("Error: Wrong Username Or Password");
+                            return;
+                        }
+                        if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
+                        {
+                            SetStatus("Error: No Music To Backup");
+                            ftpClient.Disconnect();
+                            return;
+                        }
+
+                        ftpClient.List();
+                        List<FtpDirectory> soundtrackFolders = ftpClient.GetDirectories();
+                        List<FtpFile> soundtrackFiles = ftpClient.GetFiles();
+
+                        foreach (FtpDirectory tempDir in soundtrackFolders)
+                        {
+                            if (!ftpClient.ChangeWorkingDirectory(tempDir.Name))
+                            {
+                                ftpClient.Disconnect();
+                                return;
+                            }
+
+                            ftpClient.List();
+                            List<FtpFile> subfolderFiles = ftpClient.GetFiles();
+
+                            foreach (FtpFile tempFile in subfolderFiles)
+                            {
+                                if (!ftpClient.Retrieve(tempFile.name))
+                                {
+                                    ftpClient.Disconnect();
+                                    return;
+                                }
+                                ZipArchiveEntry fileEntry = zip.CreateEntry(tempDir.Name + "/" + tempFile.name);
+                                using (BinaryWriter writer = new BinaryWriter(fileEntry.Open()))
+                                {
+                                    writer.Write(ftpClient.downloadedBytes, 0, ftpClient.downloadedBytes.Length);
+                                }
+                            }
+                            if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
+                            {
+                                ftpClient.Disconnect();
+                                return;
+                            }
+                        }
+
+                        foreach (FtpFile tempFile in soundtrackFiles)
+                        {
+                            if (!ftpClient.Retrieve(tempFile.name))
+                            {
+                                ftpClient.Disconnect();
+                                return;
+                            }
+                            ZipArchiveEntry fileEntry = zip.CreateEntry(tempFile.name);
+                            using (BinaryWriter writer = new BinaryWriter(fileEntry.Open()))
+                            {
+                                writer.Write(ftpClient.downloadedBytes, 0, ftpClient.downloadedBytes.Length);
+                            }
+                        }
+
+                        ftpClient.Disconnect();
+                        Dispatcher.Invoke(new Action(() =>
+                        {
+                            txtStatus.Text = "DB Backed Up To Zip";
+                        }));
+                    }
+                }
             }
             catch
             {
-                txtStatus.Text = "Failed: Check Log For Details";
+                Dispatcher.Invoke(new Action(() => {
+                    txtStatus.Text = "Critical Error";
+                }));
+            }
+            finally
+            {
+                Dispatcher.Invoke(new Action(() => {
+                    gridMain.IsEnabled = true;
+                }));
+            }
+        }
+
+        private bool ChangeToMusicDirectory()
+        {
+            if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
+            {
+                // try to change to save folder
+                if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000"))
+                {
+                    if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA"))
+                    {
+                        ftpClient.Disconnect();
+                        return false;
+                    }
+                    else
+                    {
+                        if (!ftpClient.MakeDirectory("fffe0000"))
+                        {
+                            ftpClient.Disconnect();
+                            return false;
+                        }
+                        else
+                        {
+                            if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000"))
+                            {
+                                ftpClient.Disconnect();
+                                return false;
+                            }
+                            else
+                            {
+                                if (!ftpClient.MakeDirectory("music"))
+                                {
+                                    ftpClient.Disconnect();
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // try to make music directory
+                    if (!ftpClient.MakeDirectory("music"))
+                    {
+                        ftpClient.Disconnect();
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private void mnuUploadBackupToFtp_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog ofDialog = new OpenFileDialog();
+            ofDialog.Filter = "Zip files (*.zip)|*.zip";
+            ofDialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            if (ofDialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            gridMain.IsEnabled = false;
+            txtStatus.Text = "Uploading Backup To FTP";
+            thrFtpControl = new Thread(new ParameterizedThreadStart(UploadBackupToFtp));
+            thrFtpControl.Start(ofDialog.FileName);
+        }
+
+        private void SetStatus(string msg)
+        {
+            Dispatcher.Invoke(new Action(() => {
+                txtStatus.Text = msg;
+            }));
+        }
+
+        private void UploadBackupToFtp(object zipPath)
+        {
+            ftpClient = new FtpClient(ftpIpAddress, ftpUsername, ftpPassword);
+            try
+            {
+                if (!ftpClient.Connect())
+                {
+                    SetStatus("Error: Failed To Connnect To Xbox");
+                    return;
+                }
+                if (!ftpClient.Login())
+                {
+                    SetStatus("Error: Wrong Username Or Password");
+                    return;
+                }
+
+                if (!ChangeToMusicDirectory())
+                {
+                    SetStatus("Error: Failed To Create Music Folder");
+                    return;
+                }
+
+                using (FileStream fStream = new FileStream((string)zipPath, FileMode.Open))
+                {
+                    using (ZipArchive zip = new ZipArchive(fStream, ZipArchiveMode.Read, true))
+                    {
+                        Dispatcher.Invoke(new Action(() => {
+                            progFtpTransfer.Maximum = zip.Entries.Count;
+                            progFtpTransfer.Value = 0;
+                        }));
+                        
+                        foreach (ZipArchiveEntry zArchive in zip.Entries)
+                        {
+                            using (BinaryReader bReader = new BinaryReader(zArchive.Open()))
+                            {
+                                long fileSize = zArchive.Length;
+                                ftpClient.toUploadBytes = bReader.ReadBytes((int)fileSize);
+
+                                if (!ftpClient.ChangeWorkingDirectory(@"/E/TDATA/fffe0000/music"))
+                                {
+                                    ftpClient.Disconnect();
+                                    return;
+                                }
+                                //Debug.WriteLine(zArchive.FullName);
+                                if (zArchive.FullName.Contains("/"))
+                                {
+                                    string[] split = zArchive.FullName.Split('/');
+                                    ftpClient.MakeDirectory(split[0]);
+                                    ftpClient.ChangeWorkingDirectory(split[0]);
+                                    if (!ftpClient.Store(zArchive.Name))
+                                    {
+                                        return;
+                                    }
+                                    Dispatcher.Invoke(new Action(() => {
+                                        progFtpTransfer.Value++;
+                                    }));
+                                }
+                                else
+                                {
+                                    if (!ftpClient.Store(zArchive.Name))
+                                    {
+                                        return;
+                                    }
+                                    Dispatcher.Invoke(new Action(() => {
+                                        progFtpTransfer.Value++;
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+                ftpClient.Disconnect();
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Uploaded DB Backup";
+                }));
+            }
+            catch
+            {
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Critical Error";
+                }));
+            }
+            finally
+            {
+                logLines = ftpClient.ftpLogEntries;
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    progFtpTransfer.Value = 0;
+                    gridMain.IsEnabled = true;
+                }));
+            }
+        }
+
+        private void mnuFtpLog_Click(object sender, RoutedEventArgs e)
+        {
+            FtpLog ftpLog;
+            if (ftpClient == null)
+            {
+                ftpLog = new FtpLog(new List<FtpLogEntry>());
+            }
+            else
+            {
+                ftpLog = new FtpLog(ftpClient.ftpLogEntries);
+            }
+            ftpLog.Top = this.Top + 100;
+            ftpLog.Left = this.Left + 100;
+            ftpLog.ShowDialog();
+        }
+
+        private void btnAddMp3_Click(object sender, RoutedEventArgs e)
+        {
+            if (!Directory.Exists(outputFolder))
+            {
+                MessageBox.Show("Invalid output folder configured in Settings.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            OpenFileDialog oDialog = new OpenFileDialog();
+            oDialog.Filter = "MP3 files (*.mp3)|*.mp3";
+            oDialog.Multiselect = true;
+
+            if (oDialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            progFtpTransfer.Value = 0;
+            gridMain.IsEnabled = false;
+
+            Thread addMp3Files = new Thread(new ParameterizedThreadStart(AddMp3Files));
+            addMp3Files.Start(oDialog.FileNames);
+        }
+
+        private void AddMp3Files(object paths)
+        {
+            Soundtrack sTrack = null;
+            Dispatcher.Invoke(new Action(() =>
+            {
+                sTrack = (Soundtrack)listSoundtracks.SelectedItem;
+            }));
+            
+            int soundtrackId = sTrack.id;
+
+            string[] realPaths = (string[])paths;
+
+            Dispatcher.Invoke(new Action(() =>
+            {
+                txtStatus.Text = "Converting Mp3 Files";
+                progFtpTransfer.Maximum = realPaths.Length;
+            }));
+
+            try
+            {
+                foreach (string path in realPaths)
+                {
+                    string wmaOutputPath = outputFolder + "\\" + nextSongId.ToString("X4") + ".wma";
+                    using (MediaFoundationReader reader = new MediaFoundationReader(path))
+                    {
+                        MediaFoundationEncoder.EncodeToWma(reader, wmaOutputPath, bitrate);
+                    }
+
+                    ftpLocalPaths.Add(wmaOutputPath);
+                    AddSongLoop(soundtrackId, path);
+                    Dispatcher.Invoke(new Action(() =>
+                    {
+                        progFtpTransfer.Value++;
+                    }));
+                }
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Mp3 Files Added Successfully";
+                    gridMain.IsEnabled = true;
+                    btnFTPChanges.IsEnabled = true;
+                }));
+            }
+            catch
+            {
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Unknown Error.  Check the log for details.";
+                    gridMain.IsEnabled = true;
+                    btnFTPChanges.IsEnabled = true;
+                }));
             }
         }
     }
