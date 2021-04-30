@@ -1,6 +1,6 @@
 OGXboxSoundtrackEditor
 ## About
-OGXboxSoundtrackEditor is an application to manipulate the music stored on the hard drive of an original Xbox console.
+OGXboxSoundtrackEditor is an application to manipulate the music stored on the hard drive of an original Xbox console.  It has the following features:
 * Create, delete, and rename soundtracks
 * Delete and rename songs in a soundtrack
 * Add .WMA file to a soundtrack
