@@ -8,8 +8,18 @@ namespace OGXboxSoundtrackEditor
 {
     public class Song
     {
+        public int Identity
+        {
+            get { return id; }
+        }
         public int id;
+
+        public int SongGroupId
+        {
+            get { return songGroupId; }
+        }
         public int songGroupId;
+
         public int soundtrackId;
 
         public bool isRemote;

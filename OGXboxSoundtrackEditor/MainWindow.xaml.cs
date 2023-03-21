@@ -36,6 +36,9 @@ namespace OGXboxSoundtrackEditor
 
         FtpClient ftpClient;
 
+        bool blankSoundtrackAdded = false;
+        int blankSoundtrackId = 0;
+
         // wma stuff
         WindowsMediaPlayer wmp = new WindowsMediaPlayer();
 
@@ -266,7 +269,7 @@ namespace OGXboxSoundtrackEditor
                 {
                     btnAddSoundtrack.IsEnabled = true;
                     listSoundtracks.ItemsSource = soundtracks;
-                    txtStatus.Text = "DB Loaded Successfully 123";
+                    txtStatus.Text = "DB Loaded Successfully";
                     gridMain.IsEnabled = true;
                 }));
             }
@@ -422,6 +425,18 @@ namespace OGXboxSoundtrackEditor
 
         private void listSoundtracks_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (blankSoundtrackAdded)
+            {
+                foreach (Soundtrack sound in e.RemovedItems)
+                {
+                    soundtracks.Remove(sound);
+                }
+
+                FindNextSoundtrackId();
+                MessageBox.Show(nextSoundtrackId.ToString());
+                blankSoundtrackAdded = false;
+            }    
+
             if (listSoundtracks.SelectedItem == null)
             {
                 listSongs.ItemsSource = null;
@@ -471,12 +486,15 @@ namespace OGXboxSoundtrackEditor
 
             numSoundtracks++;
 
+            MessageBox.Show(nextSoundtrackId.ToString());
             FindNextSoundtrackId();
 
             listSoundtracks.SelectedItem = listSoundtracks.Items[soundtracks.Count - 1];
             listSoundtracks.Focus();
 
             txtStatus.Text = "Added soundtrack " + title;
+
+            blankSoundtrackAdded = true;
         }
 
         private void btnAddWma_Click(object sender, RoutedEventArgs e)
@@ -525,7 +543,6 @@ namespace OGXboxSoundtrackEditor
                 {
                     txtStatus.Text = "Wma Files Added Successfully";
                     gridMain.IsEnabled = true;
-                    btnFTPChanges.IsEnabled = true;
                 }));
             }
             catch
@@ -534,7 +551,6 @@ namespace OGXboxSoundtrackEditor
                 {
                     txtStatus.Text = "Unknown Error.  Check the log for details";
                     gridMain.IsEnabled = true;
-                    btnFTPChanges.IsEnabled = true;
                 }));
             }
         }
@@ -664,6 +680,8 @@ namespace OGXboxSoundtrackEditor
                 FindNextSongId();
                 FindNextSoundtrackId();
             }
+
+            FtpSTDB();
         }
 
         private void btnDeleteSongs_Click(object sender, RoutedEventArgs e)
@@ -742,6 +760,8 @@ namespace OGXboxSoundtrackEditor
             listSongs.ItemsSource = tempSoundtrack.allSongs;
             ReorderSongsInGroups(tempSoundtrack);
             FindNextSongId();
+
+            FtpSTDB();
         }
 
         
@@ -895,15 +915,7 @@ namespace OGXboxSoundtrackEditor
             }
         }
 
-        private void btnFTPChanges_Click(object sender, RoutedEventArgs e)
-        {
-            gridMain.IsEnabled = false;
-            txtStatus.Text = "Uploading New Soundtracks/Songs";
-            thrFtpControl = new Thread(new ThreadStart(FtpChanges));
-            thrFtpControl.Start();
-        }
-
-        private void FtpChanges()
+        private void FtpSTDB()
         {
             try
             {
@@ -1110,6 +1122,8 @@ namespace OGXboxSoundtrackEditor
             }
             sTrack.name = new char[64];
             title.CopyTo(0, sTrack.name, 0, title.Length);
+
+            FtpSTDB();
         }
 
         private bool ContainsSoundtracks()
@@ -1156,6 +1170,8 @@ namespace OGXboxSoundtrackEditor
                     }
                 }
             }
+
+            FtpSTDB();
         }
 
         private void mnuBackupFromFtp_Click(object sender, RoutedEventArgs e)
@@ -1518,8 +1534,6 @@ namespace OGXboxSoundtrackEditor
                 Dispatcher.Invoke(new Action(() =>
                 {
                     txtStatus.Text = "Mp3 Files Added Successfully";
-                    gridMain.IsEnabled = true;
-                    btnFTPChanges.IsEnabled = true;
                 }));
             }
             catch
@@ -1527,10 +1541,15 @@ namespace OGXboxSoundtrackEditor
                 Dispatcher.Invoke(new Action(() =>
                 {
                     txtStatus.Text = "Unknown Error.  Check the log for details.";
-                    gridMain.IsEnabled = true;
-                    btnFTPChanges.IsEnabled = true;
                 }));
             }
+
+            FtpSTDB();
+
+            Dispatcher.Invoke(new Action(() =>
+            {
+                gridMain.IsEnabled = true;
+            }));
         }
     }
 }

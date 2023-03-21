@@ -76,6 +76,8 @@
                         <GridView>
                             <GridViewColumn Header="Name" Width="300" DisplayMemberBinding="{Binding Name}" />
                             <GridViewColumn Header="Time (ms)" Width="60" DisplayMemberBinding="{Binding TimeMs}" />
+                            <GridViewColumn Header="Song Group ID" Width="60" DisplayMemberBinding="{Binding SongGroupId}" />
+                            <GridViewColumn Header="Song ID" Width="60" DisplayMemberBinding="{Binding Identity}" />
                         </GridView>
                     </ListView.View>
                 </ListView>
@@ -85,9 +87,7 @@
         
 
         
-        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
-            <Button x:Name="btnFTPChanges" IsEnabled="False" Padding="5" Margin="10,10,10,10" Click="btnFTPChanges_Click">FTP Changes</Button>
-        </StackPanel>
+        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal"/>
         <StatusBar Grid.Row="3">
             <TextBlock x:Name="txtStatus" Text="Ready" />
         </StatusBar>
