@@ -8,20 +8,13 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using WMPLib;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
 
 namespace OGXboxSoundtrackEditor
 {
@@ -83,6 +76,46 @@ namespace OGXboxSoundtrackEditor
             ftpUsername = Properties.Settings.Default.ftpUsername;
             ftpPassword = Properties.Settings.Default.ftpPassword;
             bitrate = Properties.Settings.Default.bitrate;
+
+            if (!Directory.Exists(outputFolder))
+            {
+                txtStatus.Text = "Output Folder is invalid.";
+                mnuOpenFromFTP.IsEnabled = false;
+                return;
+            }
+
+            if (ftpIpAddress.ToString() == "")
+            {
+                txtStatus.Text = "FTP Address is blank.";
+                mnuOpenFromFTP.IsEnabled = false;
+                return;
+            }
+            else
+            {
+                if (!IPAddress.TryParse(ftpIpAddress, out IPAddress parsedIP))
+                {
+                    txtStatus.Text = "FTP Address is invalid.";
+                    mnuOpenFromFTP.IsEnabled = false;
+                    return;
+                }
+            }
+
+            if (ftpUsername.ToString().Trim() == "")
+            {
+                txtStatus.Text = "FTP Username is blank.";
+                mnuOpenFromFTP.IsEnabled = false;
+                return;
+            }
+
+            if (ftpPassword.ToString().Trim() == "")
+            {
+                txtStatus.Text = "FTP Password is blank.";
+                mnuOpenFromFTP.IsEnabled = false;
+                return;
+            }
+
+            txtStatus.Text = "Settings are valid.";
+            mnuOpenFromFTP.IsEnabled = true;
         }
 
         private void UpdateStatus(string s)
@@ -270,16 +303,42 @@ namespace OGXboxSoundtrackEditor
                     btnAddSoundtrack.IsEnabled = true;
                     listSoundtracks.ItemsSource = soundtracks;
                     txtStatus.Text = "DB Loaded Successfully";
+                }));
+            }
+            catch (SocketException sockEx)
+            {
+                
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Failed to connect to FTP server.";
                     gridMain.IsEnabled = true;
                 }));
+                return;
+            }
+            catch (IOException ioEx)
+            {
+                
+                Dispatcher.Invoke(new Action(() =>
+                {
+                    txtStatus.Text = "Input/Output error on stream.";
+                    gridMain.IsEnabled = true;
+                }));
+                return;
             }
             catch
             {
                 Dispatcher.Invoke(new Action(() =>
                 {
                     txtStatus.Text = "Unknown Error.  Check the log for details.";
+                    gridMain.IsEnabled = true;
                 }));
+                return;
             }
+
+            Dispatcher.Invoke(new Action(() =>
+            {
+                gridMain.IsEnabled = true;
+            }));
         }
 
         private void mnuSettings_Click(object sender, RoutedEventArgs e)
@@ -433,7 +492,6 @@ namespace OGXboxSoundtrackEditor
                 }
 
                 FindNextSoundtrackId();
-                MessageBox.Show(nextSoundtrackId.ToString());
                 blankSoundtrackAdded = false;
             }    
 
@@ -486,7 +544,6 @@ namespace OGXboxSoundtrackEditor
 
             numSoundtracks++;
 
-            MessageBox.Show(nextSoundtrackId.ToString());
             FindNextSoundtrackId();
 
             listSoundtracks.SelectedItem = listSoundtracks.Items[soundtracks.Count - 1];
@@ -544,6 +601,8 @@ namespace OGXboxSoundtrackEditor
                     txtStatus.Text = "Wma Files Added Successfully";
                     gridMain.IsEnabled = true;
                 }));
+
+                FtpSTDB();
             }
             catch
             {
@@ -1102,7 +1161,10 @@ namespace OGXboxSoundtrackEditor
         private void mnuOpenFromFtp_Click(object sender, RoutedEventArgs e)
         {
             gridMain.IsEnabled = false;
-            OpenDbFromStream();
+            txtStatus.Text = "Connecting to " + ftpIpAddress.ToString();
+
+            Thread openSTDB = new Thread(new ThreadStart(OpenDbFromStream));
+            openSTDB.Start();
         }
 
         private void btnRenameSoundtrack_Click(object sender, RoutedEventArgs e)

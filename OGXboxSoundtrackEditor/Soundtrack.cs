@@ -21,6 +21,11 @@ namespace OGXboxSoundtrackEditor
             get { return new string(name).Trim(); }
         }
 
+        public string ID
+        {
+            get { return id.ToString(); }
+        }
+
         public byte[] padding = new byte[32];
 
         public List<SongGroup> songGroups = new List<SongGroup>();
