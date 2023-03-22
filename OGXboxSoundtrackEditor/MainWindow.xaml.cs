@@ -1186,6 +1186,8 @@ namespace OGXboxSoundtrackEditor
             title.CopyTo(0, sTrack.name, 0, title.Length);
 
             FtpSTDB();
+
+            listSoundtracks.Items.Refresh();
         }
 
         private bool ContainsSoundtracks()
@@ -1225,8 +1227,6 @@ namespace OGXboxSoundtrackEditor
                                 sGroup.songNames[i] = new char[32];
                                 title.CopyTo(0, sGroup.songNames[i], 0, title.Length);
                                 sTrack.RefreshAllSongNames();
-                                listSongs.Items.Refresh();
-                                return;
                             }
                         }
                     }
@@ -1234,6 +1234,8 @@ namespace OGXboxSoundtrackEditor
             }
 
             FtpSTDB();
+
+            listSongs.Items.Refresh();
         }
 
         private void mnuBackupFromFtp_Click(object sender, RoutedEventArgs e)
